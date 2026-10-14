@@ -1,0 +1,23 @@
+# --- Personal / large datasets (do NOT publish) ---
+data/
+sample/*
+# ... except the bundled synthetic demo so the tool runs out-of-the-box
+!sample/wos_demo_synthetic.txt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# --- WorkBuddy ---
+.workbuddy/
+
+# --- local server logs / temp ---
+*.log

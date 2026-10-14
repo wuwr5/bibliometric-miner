@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文献计量分析工作台 · CiteSpace-like</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="logo"></span>
+    <div>
+      <div class="t1">文献计量分析工作台</div>
+      <div class="t2">co-citation · burst · timeline · clustering</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button id="btnUpload" class="btn">导入 WoS 数据</button>
+    <input type="file" id="fileInput" accept=".txt,.ciw,.csv" multiple hidden>
+    <button id="btnRun" class="btn primary">运行分析</button>
+    <button id="btnReload" class="btn ghost" title="重新扫描数据目录">刷新</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============================ left panel ============================ -->
+  <aside class="panel" id="panel">
+    <div class="grp">
+      <div class="grp-t">数据源</div>
+      <div id="fileList" class="filelist"><div class="muted">加载中…</div></div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">网络节点类型</div>
+      <select id="p_nodeType">
+        <option value="ref">被引文献 Cited reference</option>
+        <option value="keyword" selected>关键词 Keyword</option>
+        <option value="author">作者 Author</option>
+        <option value="org">机构 Institution</option>
+        <option value="country">国家 Country</option>
+        <option value="cited_journal">被引期刊 Cited journal</option>
+        <option value="category">学科类别 Category</option>
+      </select>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">时间切片</div>
+      <label>起始年 <input type="number" id="p_yearFrom" class="num" placeholder="自动"></label>
+      <label>结束年 <input type="number" id="p_yearTo" class="num" placeholder="自动"></label>
+      <label>切片长度(年) <input type="number" id="p_sliceLen" class="num" value="1" min="1" max="20"></label>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">节点选择标准</div>
+      <select id="p_criterion">
+        <option value="top">每切片 Top N</option>
+        <option value="top_pct">每切片 Top N%</option>
+        <option value="gindex">g-index × k</option>
+        <option value="threshold">频次阈值 ≥</option>
+      </select>
+      <label>取值 <input type="number" id="p_critVal" class="num" value="40" step="1"></label>
+      <label>最大节点数 <input type="number" id="p_maxNodes" class="num" value="500"></label>
+      <label>节点最小频次 <input type="number" id="p_minCount" class="num" value="1" min="1"></label>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">连线权重归一化</div>
+      <select id="p_normalize">
+        <option value="">不归一化（原始共现次数）</option>
+        <option value="cosine">Cosine</option>
+        <option value="dice">Dice</option>
+        <option value="jaccard">Jaccard</option>
+        <option value="equivalence">Equivalence</option>
+      </select>
+      <div class="grp-t mt">网络剪枝</div>
+      <select id="p_pruning">
+        <option value="none">不剪枝</option>
+        <option value="skeleton">骨架网络（每节点保留 k 条最强边）</option>
+        <option value="mst">最小生成树 MST</option>
+        <option value="mst+skeleton">MST + 骨架</option>
+        <option value="pathfinder">Pathfinder 网络缩放 PFNET</option>
+      </select>
+      <label>骨架 k <input type="number" id="p_pruneK" class="num" value="4" min="1" max="20"></label>
+      <div class="sub" id="pfBox">
+        <div class="grp-t mt">Pathfinder 参数</div>
+        <label>r（Minkowski）
+          <select id="p_pfR">
+            <option value="1">1 · 曼哈顿（剪枝最强）</option>
+            <option value="2" selected>2 · 欧氏（常用）</option>
+            <option value="3">3</option>
+            <option value="inf">∞ · 极大值（退化为 MST）</option>
+          </select>
+        </label>
+        <label>q（路径最大边数，留空=n-1） <input type="number" id="p_pfQ" class="num" placeholder="n-1" min="2"></label>
+        <label>距离度量
+          <select id="p_pfMetric">
+            <option value="count" selected>1 / 共现次数（推荐）</option>
+            <option value="cosine">1 − cosine</option>
+          </select>
+        </label>
+        <div class="muted small">在完整相似度矩阵上运行；未共现的连线会被剔除。q&lt;n-1 时节点上限 150。</div>
+      </div>
+      <label class="chk"><input type="checkbox" id="p_lcc" checked> 仅保留最大连通分量</label>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">聚类与标签</div>
+      <label>分辨率 resolution <input type="number" id="p_resolution" class="num" value="1" step="0.1" min="0.1" max="5"></label>
+      <label>标签算法
+        <select id="p_labelMethod">
+          <option value="llr">对数似然比 LLR</option>
+          <option value="mi">互信息 MI</option>
+        </select>
+      </label>
+      <label>标签来源
+        <select id="p_labelSource">
+          <option value="all">关键词+标题+摘要</option>
+          <option value="keywords">仅关键词</option>
+          <option value="title">仅标题</option>
+          <option value="abstract">仅摘要</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">突现检测（Kleinberg）</div>
+      <label>γ gamma <input type="number" id="p_bGamma" class="num" value="1" step="0.1" min="0.1" max="4"></label>
+      <label>基数 s <input type="number" id="p_bBase" class="num" value="2" step="0.1" min="1.1" max="4"></label>
+      <label>最短持续(年) <input type="number" id="p_bMinDur" class="num" value="2" min="1"></label>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">导出</div>
+      <div class="row">
+        <button class="btn sm" data-export="png-net">网络图 PNG</button>
+        <button class="btn sm" data-export="png-zone">时间线 PNG</button>
+      </div>
+      <div class="row">
+        <button class="btn sm" data-export="csv-nodes">节点 CSV</button>
+        <button class="btn sm" data-export="csv-edges">边 CSV</button>
+      </div>
+      <div class="row">
+        <button class="btn sm" data-export="csv-cluster">聚类 CSV</button>
+        <button class="btn sm" data-export="csv-burst">突现 CSV</button>
+      </div>
+        <div class="row new-ui">
+          <span class="ov-t" style="margin:0 8px 0 0">新增模块导出：</span>
+          <button class="btn sm" data-export="csv-topics">主题 CSV</button>
+          <button class="btn sm" data-export="json-topics">主题 JSON</button>
+          <button class="btn sm" data-export="csv-citenet">引文网络 CSV</button>
+          <button class="btn sm" data-export="csv-forecast">趋势预测 CSV</button>
+          <button class="btn sm" data-export="csv-kbca">多维融合 CSV</button>
+          <button class="btn sm" data-export="json-kbca">多维融合 JSON</button>
+        </div>
+      <div class="row">
+        <button class="btn sm" data-export="graphml">GraphML</button>
+        <button class="btn sm" data-export="json">完整 JSON</button>
+      </div>
+      <div class="grp-t mt">扩展视图导出</div>
+      <div class="row">
+        <button class="btn sm" data-export="png-dual">双图叠加 PNG</button>
+        <button class="btn sm" data-export="csv-dual">期刊流 CSV</button>
+      </div>
+      <div class="row">
+        <button class="btn sm" data-export="png-geo">地理视图 PNG</button>
+        <button class="btn sm" data-export="csv-geo">国家 CSV</button>
+      </div>
+      <div class="row">
+        <button class="btn sm" data-export="csv-sv">结构变异 CSV</button>
+        <button class="btn sm" data-export="json-sv">结构变异 JSON</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================== center ============================== -->
+  <section class="work">
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="network">网络图谱</button>
+      <button class="tab" data-view="zone">时间线 / 时区</button>
+      <button class="tab" data-view="burst">突现检测</button>
+      <button class="tab" data-view="cluster">聚类</button>
+      <button class="tab" data-view="nodes">节点</button>
+      <button class="tab" data-view="dual">双图叠加</button>
+      <button class="tab" data-view="geo">地理视图</button>
+      <button class="tab" data-view="sv">结构变异</button>
+      <button class="tab new-tab" data-view="topics">主题建模</button>
+      <button class="tab new-tab" data-view="citenet">引文网络</button>
+      <button class="tab new-tab" data-view="forecast">趋势预测</button>
+      <button class="tab new-tab" data-view="kbca">多维融合</button>
+      <button class="tab" data-view="overview">概览</button>
+    </nav>
+
+    <!-- network ---------------------------------------------------------->
+    <div class="view active" id="view-network">
+      <div class="toolbar">
+        <label class="chk"><input type="checkbox" id="n_labels" checked> 显示标签</label>
+        <label class="chk"><input type="checkbox" id="n_rings" checked> 年轮</label>
+        <label class="chk"><input type="checkbox" id="n_cCirc" checked> 中心性紫环</label>
+        <span class="sep"></span>
+        <label>着色
+          <select id="n_color">
+            <option value="cluster">按聚类</option>
+            <option value="year">按年份（色阶）</option>
+            <option value="burst">按突现强度</option>
+          </select>
+        </label>
+        <label>标签数 <input type="number" id="n_labelTop" class="num" value="40" min="0" max="500"></label>
+        <label>节点大小 <input type="range" id="n_scale" min="0.4" max="2.5" step="0.05" value="1"></label>
+        <span class="sep"></span>
+        <button class="btn sm" id="n_relayout">重新布局</button>
+        <button class="btn sm" id="n_fit">适应窗口</button>
+        <button class="btn sm" id="n_pause">暂停</button>
+      </div>
+      <div class="canvas-wrap" id="netWrap">
+        <canvas id="netCanvas"></canvas>
+        <div class="legend" id="netLegend"></div>
+        <div class="tooltip" id="netTip"></div>
+      </div>
+    </div>
+
+    <!-- zone ------------------------------------------------------------->
+    <div class="view" id="view-zone">
+      <div class="toolbar">
+        <label>视图
+          <select id="z_mode">
+            <option value="timeline">时间线（按聚类分带）</option>
+            <option value="timezone">时区（按年份分列）</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="z_labels" checked> 显示标签</label>
+        <label class="chk"><input type="checkbox" id="z_rings" checked> 年轮</label>
+        <label>标签数 <input type="number" id="z_labelTop" class="num" value="30"></label>
+        <button class="btn sm" id="z_fit">适应窗口</button>
+      </div>
+      <div class="canvas-wrap" id="zoneWrap">
+        <canvas id="zoneCanvas"></canvas>
+        <div class="legend" id="zoneLegend"></div>
+        <div class="tooltip" id="zoneTip"></div>
+      </div>
+    </div>
+
+    <!-- burst ------------------------------------------------------------>
+    <div class="view" id="view-burst">
+      <div class="toolbar">
+        <label>显示条数 <input type="number" id="b_top" class="num" value="40"></label>
+        <label>最小强度 <input type="number" id="b_minStrength" class="num" value="0" step="1"></label>
+        <button class="btn sm" id="b_apply">应用</button>
+        <span class="muted" id="b_info"></span>
+      </div>
+      <div id="burstBox" class="burst-box"></div>
+    </div>
+
+    <!-- cluster ---------------------------------------------------------->
+    <div class="view" id="view-cluster">
+      <div class="toolbar">
+        <span class="muted" id="c_info"></span>
+        <label class="chk"><input type="checkbox" id="c_expand" checked> 展开标签词</label>
+      </div>
+      <div id="clusterBox" class="table-box"></div>
+    </div>
+
+    <!-- nodes ------------------------------------------------------------>
+    <div class="view" id="view-nodes">
+      <div class="toolbar">
+        <label>聚类筛选
+          <select id="nd_cluster"><option value="">全部</option></select>
+        </label>
+        <input type="search" id="nd_search" placeholder="搜索节点标签…" class="search">
+        <span class="muted" id="nd_info"></span>
+      </div>
+      <div id="nodeBox" class="table-box"></div>
+    </div>
+
+    <!-- dual map --------------------------------------------------------->
+    <div class="view" id="view-dual">
+      <div class="toolbar">
+        <button class="btn sm" id="d_run">重新计算</button>
+        <label>最小流量 <input type="number" id="d_minFlow" class="num" value="1" min="1"></label>
+        <label>标签数 <input type="number" id="d_labelTop" class="num" value="12" min="0" max="60"></label>
+        <label class="chk"><input type="checkbox" id="d_curves" checked> 显示引用流</label>
+        <span class="sep"></span>
+        <label class="chk"><input type="checkbox" id="d_matrix"> 显示学科流量矩阵</label>
+        <span class="muted" id="d_info"></span>
+      </div>
+      <div class="canvas-wrap" id="dualWrap">
+        <canvas id="dualCanvas"></canvas>
+        <div class="legend" id="dualLegend"></div>
+        <div class="tooltip" id="dualTip"></div>
+      </div>
+      <div id="dualMatrix" class="dual-matrix" hidden></div>
+    </div>
+
+    <!-- geo -------------------------------------------------------------->
+    <div class="view" id="view-geo">
+      <div class="toolbar">
+        <button class="btn sm" id="g_run">重新计算</button>
+        <label>最小合作次数 <input type="number" id="g_minW" class="num" value="1" min="1"></label>
+        <label>节点最小发文 <input type="number" id="g_minCount" class="num" value="1" min="1"></label>
+        <label>着色
+          <select id="g_color">
+            <option value="count">按发文量（色阶）</option>
+            <option value="cluster">按合作聚类</option>
+            <option value="year">按平均年份</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="g_labels" checked> 显示标签</label>
+        <label class="chk"><input type="checkbox" id="g_grid" checked> 经纬网</label>
+        <span class="sep"></span>
+        <button class="btn sm" id="g_fit">适应窗口</button>
+        <span class="muted" id="g_info"></span>
+      </div>
+      <div class="split">
+        <div class="canvas-wrap" id="geoWrap">
+          <canvas id="geoCanvas"></canvas>
+          <div class="legend" id="geoLegend"></div>
+          <div class="tooltip" id="geoTip"></div>
+        </div>
+        <div id="geoTable" class="geo-table"></div>
+      </div>
+    </div>
+
+    <!-- structural variation --------------------------------------------->
+    <div class="view" id="view-sv">
+      <div class="toolbar">
+        <button class="btn sm" id="s_run">重新计算</button>
+        <label>节点类型
+          <select id="s_nodeType">
+            <option value="ref" selected>被引文献 Cited reference</option>
+            <option value="keyword">关键词 Keyword</option>
+            <option value="author">作者 Author</option>
+            <option value="org">机构 Institution</option>
+            <option value="cited_journal">被引期刊 Cited journal</option>
+          </select>
+        </label>
+        <label>每年复核数 <input type="number" id="s_topFull" class="num" value="10" min="0" max="60"></label>
+        <label>年份
+          <select id="s_year"><option value="">全部年份</option></select>
+        </label>
+        <label>最小连接度 <input type="number" id="s_minLink" class="num" value="1" min="1"></label>
+        <span class="muted" id="s_info"></span>
+      </div>
+      <div class="sv-box" id="svBox">
+        <div class="ov-chart">
+          <div class="ov-t">结构变异散点：聚类连接度 × 模块化变化 ΔM（点越大=连接越多，颜色=年份）</div>
+          <div class="sv-canvas-wrap">
+            <canvas id="svCanvas" height="400"></canvas>
+            <div class="tooltip" id="svTip"></div>
+          </div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">各年度最大结构变更 |min ΔM|（柱上数字为当年可评估的新增节点数）</div>
+          <canvas id="svYearCanvas" height="110"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">明细表（按 ΔM 升序，越靠上越具结构变革性）</div>
+          <div id="svTable" class="table-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- topic modelling (LDA / BERTopic-style) ---------------------------->
+    <div class="view" id="view-topics">
+      <div class="toolbar">
+        <button class="btn sm" id="t_run">运行主题建模</button>
+        <label>方法
+          <select id="t_method">
+            <option value="lda" selected>LDA（Gibbs 采样）</option>
+            <option value="ctfidf">c-TF-IDF（BERTopic 式）</option>
+          </select>
+        </label>
+        <label>主题数 <input type="number" id="t_k" class="num" value="10" min="2" max="60"></label>
+        <label>迭代 <input type="number" id="t_iter" class="num" value="60" min="10" max="400"></label>
+        <label>语料
+          <select id="t_fields">
+            <option value="title_abstract" selected>标题 + 摘要</option>
+            <option value="title">仅标题</option>
+            <option value="abstract">仅摘要</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="t_bigrams" checked> 二元词组</label>
+        <span class="muted" id="t_info"></span>
+      </div>
+      <div class="ov-box">
+        <div class="ov-chart">
+          <div class="ov-t">主题逐年占比（堆叠面积）</div>
+          <canvas id="tYearCanvas" height="200"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t" id="tBubbleT">主题鸟瞰：横轴 = 平均年份，纵轴 = 文献规模，气泡大小 = 主题体量</div>
+          <div class="sv-canvas-wrap">
+            <canvas id="tBubbleCanvas" height="360"></canvas>
+            <div class="tooltip" id="tTip"></div>
+          </div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">主题明细（点击行查看代表词与代表文献）</div>
+          <div id="tTable" class="table-inner"></div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t" id="tTermT">选中主题的代表词（条形 = 该词在该主题内的概率）</div>
+          <div id="tTerms" class="term-cloud"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- internal citation network structure ------------------------------->
+    <div class="view" id="view-citenet">
+      <div class="toolbar">
+        <button class="btn sm" id="cn_run">重新计算</button>
+        <span class="muted" id="cn_info"></span>
+      </div>
+      <div class="ov-box">
+        <div class="cards" id="cnCards"></div>
+        <div class="ov-chart">
+          <div class="ov-t">主路径 Main path（按引用年先后排列，高亮 = 库内引用链主干）</div>
+          <canvas id="cnPathCanvas" height="120"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">引文半衰期：各年引文年龄中位数（越小说明越依赖新文献）</div>
+          <canvas id="cnHalfCanvas" height="150"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">结构多样性 × 结构洞（点击散点查看文献）</div>
+          <div class="sv-canvas-wrap">
+            <canvas id="cnScatterCanvas" height="360"></canvas>
+            <div class="tooltip" id="cnTip"></div>
+          </div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">文献指标明细</div>
+          <div id="cnTable" class="table-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- trend forecasting -------------------------------------------------->
+    <div class="view" id="view-forecast">
+      <div class="toolbar">
+        <button class="btn sm" id="f_run">重新计算</button>
+        <label>节点类型
+          <select id="f_nodeType">
+            <option value="keyword" selected>关键词 Keyword</option>
+            <option value="ref">被引文献 Cited reference</option>
+            <option value="author">作者 Author</option>
+            <option value="cited_journal">被引期刊 Cited journal</option>
+          </select>
+        </label>
+        <label>建模节点数 <input type="number" id="f_top" class="num" value="50" min="10" max="300"></label>
+        <label>预测年数 <input type="number" id="f_h" class="num" value="3" min="1" max="8"></label>
+        <label>回测步长 <input type="number" id="f_ho" class="num" value="3" min="1" max="5"></label>
+        <span class="muted" id="f_info"></span>
+      </div>
+      <div class="ov-box">
+        <div class="ov-chart">
+          <div class="ov-t">年度发文量预测（虚线 = 集成预测，阴影 = 区间）</div>
+          <canvas id="fDocCanvas" height="200"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t" id="fSelT">选中项的历史与预测（点击右侧表格行切换）</div>
+          <canvas id="fSeriesCanvas" height="220"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">涌现性排名（Rotolo 四维：增长率 / 持续性 / 新颖性 / 不确定性）</div>
+          <canvas id="fEmCanvas" height="330"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">预测明细与模型权重</div>
+          <div id="fTable" class="table-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KBCA multi-channel fusion ------------------------------------------>
+    <div class="view" id="view-kbca">
+      <div class="toolbar">
+        <button class="btn sm" id="k_run">运行多维融合</button>
+        <label>LDA 主题数 <input type="number" id="k_topics" class="num" value="12" min="2" max="40"></label>
+        <label>保留边数 <input type="number" id="k_edges" class="num" value="20000" min="2000" max="200000" step="2000"></label>
+        <label>置换次数 <input type="number" id="k_perms" class="num" value="199" min="49" max="999" step="50"></label>
+        <span class="muted" id="k_info"></span>
+      </div>
+      <div class="ov-box">
+        <div class="cards" id="kCards"></div>
+        <div class="ov-chart">
+          <div class="ov-t">通道相关性 Mantel 检验矩阵（r 值；边框越粗 = 相关越强，蓝 = 正相关，红 = 负相关）</div>
+          <canvas id="kMantelCanvas" height="260"></canvas>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">融合网络：文献二维投影（颜色 = 聚类，点大小 = 加权度）</div>
+          <div class="sv-canvas-wrap">
+            <canvas id="kNetCanvas" height="400"></canvas>
+            <div class="tooltip" id="kTip"></div>
+          </div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">文献价值散点：结构轴 × 语义轴（右上 = 结构核心且语义新颖）</div>
+          <div class="sv-canvas-wrap">
+            <canvas id="kScatterCanvas" height="380"></canvas>
+            <div class="tooltip" id="kTip2"></div>
+          </div>
+        </div>
+        <div class="ov-chart">
+          <div class="ov-t">文献综合价值排名</div>
+          <div id="kTable" class="table-inner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- overview --------------------------------------------------------->
+    <div class="view" id="view-overview">
+      <div id="ovBox" class="ov-box">
+        <div class="cards" id="ovCards"></div>
+        <div class="ov-chart">
+          <div class="ov-t">年度发文量与被引节点新增</div>
+          <canvas id="histCanvas" height="220"></canvas>
+        </div>
+        <div class="ov-log">
+          <div class="ov-t">分析日志</div>
+          <pre id="ovLog">尚未运行分析。</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= detail =============================== -->
+  <aside class="detail" id="detail">
+    <div class="grp-t">详情</div>
+    <div id="detailBody" class="muted small">在网络图或表格中点击节点查看详情。</div>
+  </aside>
+</main>
+
+<div class="statusbar">
+  <span id="status">就绪</span>
+  <span class="grow"></span>
+  <span id="statusRight"></span>
+</div>
+
+<script src="netview.js"></script>
+<script src="charts.js"></script>
+<script src="dualmap.js"></script>
+<script src="geoview.js"></script>
+<script src="structvar.js"></script>
+<script src="topics.js"></script>
+<script src="citenetview.js"></script>
+<script src="forecastview.js"></script>
+<script src="kbcaview.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
